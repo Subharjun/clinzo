@@ -1,0 +1,612 @@
+% =============================================================================
+%  Clinzo --- Walkthrough Video: full verbatim narration script
+%
+%  Overleaf-ready. Standard TeX Live packages only, compiles with pdfLaTeX,
+%  no shell-escape required. Upload this single .tex file and Recompile.
+% =============================================================================
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=2.1cm]{geometry}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{tcolorbox}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+
+% --- palette ---
+\definecolor{ink}{HTML}{1B2733}
+\definecolor{accent}{HTML}{1D6FB8}
+\definecolor{soft}{HTML}{5B7085}
+\definecolor{shell}{HTML}{F4F6F8}
+\definecolor{rule}{HTML}{D8E0E8}
+\definecolor{stagec}{HTML}{8A4B08}
+
+\color{ink}
+
+\titleformat{\section}{\Large\bfseries\color{accent}}{\thesection}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.6em}{}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small\color{soft}Clinzo --- Walkthrough Narration Script}
+\rhead{\small\color{soft}\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\lstdefinestyle{sh}{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{shell},
+  frame=single,
+  rulecolor=\color{rule},
+  breaklines=true,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  framexleftmargin=6pt,
+  framexrightmargin=6pt,
+  aboveskip=8pt,
+  belowskip=8pt,
+}
+\lstset{style=sh}
+
+% --- helpers ---
+
+% Verbatim narration --- everything inside is read aloud, word for word.
+% Paragraphs are spaced rather than indented: this is read aloud off a screen,
+% so the visual gap between beats is what stops you losing your place.
+\newtcolorbox{script}[1][]{
+  colback=white, colframe=accent, boxrule=1.1pt,
+  left=9pt, right=9pt, top=7pt, bottom=7pt, arc=2pt,
+  fonttitle=\bfseries\small, title={SAY THIS},
+  before upper={\setlength{\parskip}{7pt}\setlength{\parindent}{0pt}},
+  #1}
+
+% Stage direction --- do this, do not read it out.
+\newcommand{\stage}[1]{%
+  \par\vspace{4pt}\noindent
+  \textcolor{stagec}{\textbf{[\,DO:}\ \textit{#1}\textbf{\,]}}\par\vspace{4pt}}
+
+\newtcolorbox{note}[1][]{colback=shell,colframe=rule,boxrule=0.7pt,
+  left=7pt,right=7pt,top=5pt,bottom=5pt,arc=2pt,#1}
+
+\newcommand{\seg}[4]{%
+  \vspace{10pt}
+  \subsection*{#1}
+  \noindent{\color{soft}\small Runs #2\quad$\cdot$\quad#3 words\quad$\cdot$\quad#4}
+  \par\vspace{4pt}\hrule\vspace{6pt}}
+
+% =============================================================================
+\begin{document}
+
+\begin{center}
+  {\LARGE\bfseries Clinzo --- Doctor Slot Scheduling}\\[5pt]
+  {\Large\color{soft} Walkthrough video: full narration script}\\[10pt]
+  {\small Total spoken length \textbf{$\approx$12 min 45 s} at a normal pace
+   (hard limit 15).\\
+   Repository: \texttt{github.com/Subharjun/clinzo}}
+\end{center}
+
+\vspace{8pt}
+\hrule
+\vspace{12pt}
+
+\begin{note}
+\textbf{How to use this document.} Everything inside a blue \textsc{say this}
+box is written to be read aloud exactly as printed. It is already paced ---
+roughly 145 words per minute, which is a relaxed speaking speed. The orange
+\textbf{[\,DO:\,]} lines are stage directions: perform them, do not read them.
+
+Read it through twice before recording. You do not need to memorise it --- put
+it on a second monitor or print it. Small deviations are fine; just do not
+speed up to fit, because rushing the concurrency section is the one thing that
+would actually damage the submission.
+\end{note}
+
+% =============================================================================
+\section{Before you hit record}
+
+\subsection*{1. Start clean}
+
+\begin{lstlisting}
+cd ~/Desktop/Clinzo
+docker compose up -d postgres redis   # wait until both report healthy
+npm run seed                          # 2 doctors, 12 patients, ~600 slots
+npm run dev                           # API on :3000
+\end{lstlisting}
+
+\begin{note}
+\textbf{Always re-seed immediately before recording.} The opening shot depends
+on Dr Mehta's first three slots being free, because they are the worked example
+from the brief: \textbf{10:00, 10:20, 10:40}. If you have been clicking around,
+those will be booked and the strongest visual in the video is gone.
+\end{note}
+
+\subsection*{2. Windows you will need}
+
+\begin{enumerate}[leftmargin=*,itemsep=2pt]
+  \item \textbf{Browser tab 1} --- demo console, \texttt{http://localhost:3000/app}
+  \item \textbf{Browser tab 2} --- API docs, \texttt{http://localhost:3000/docs}
+  \item \textbf{Terminal} --- dark theme, font at 16--18pt
+  \item \textbf{Editor} --- with these four files already open as tabs:
+    \begin{itemize}[leftmargin=1.2em,topsep=2pt,itemsep=1pt]
+      \item \texttt{src/services/slot-generator.ts}
+      \item \texttt{prisma/migrations/20260726024738\_init/migration.sql}
+      \item \texttt{src/services/availability.service.ts}
+      \item \texttt{src/repositories/outbox.repository.ts}
+    \end{itemize}
+\end{enumerate}
+
+\subsection*{3. Recording checklist}
+
+\begin{itemize}[leftmargin=*,itemsep=2pt]
+  \item 1920$\times$1080. Hide the bookmarks bar. Close unrelated tabs.
+  \item Silence notifications --- a Slack popup mid-take costs you a re-record.
+  \item Test the microphone first. Bad audio sinks a good demo.
+  \item Record \textbf{one take per segment}. Re-recording ninety seconds is
+        painless; re-recording thirteen minutes is not.
+  \item Reset between takes with \texttt{npm run seed} (about three seconds).
+\end{itemize}
+
+% =============================================================================
+\section{Shot list}
+
+\begin{longtable}{@{}p{0.7cm} p{6.1cm} p{1.5cm} p{1.5cm} p{4.4cm}@{}}
+\toprule
+\textbf{\#} & \textbf{Segment} & \textbf{Length} & \textbf{Ends} & \textbf{Window} \\
+\midrule
+\endhead
+1 & The problem and the guarantee   & 0:52 & 0:52  & Console \\
+2 & Stack and architecture          & 1:19 & 2:11  & Editor \\
+3 & Slot generation and timezones   & 2:16 & 4:27  & Console \\
+4 & Booking lifecycle               & 1:52 & 6:19  & Console \\
+5 & \textbf{The concurrency proof}  & 2:46 & 9:05  & Console, terminal, SQL \\
+6 & Retroactive availability change & 1:12 & 10:17 & Editor \\
+7 & Events, outbox and workers      & 1:08 & 11:25 & Editor \\
+8 & Ops surface and CI              & 1:02 & 12:27 & Browser, terminal \\
+9 & Trade-offs and close            & 0:45 & 13:12 & Console or camera \\
+\bottomrule
+\end{longtable}
+
+% =============================================================================
+\section{The narration}
+
+% ---
+\seg{Segment 1 --- The problem and the guarantee}{0:52}{125}{Demo console, Dr Mehta's slots on screen}
+
+\stage{Start on the demo console with slots visible. Do not click anything yet.}
+
+\begin{script}
+Hi, I'm Subharjun. This is Clinzo --- a doctor slot scheduling backend I built
+for the backend engineering assessment.
+
+The problem looks simple at first. A doctor says: I work Mondays, ten to six. A
+patient needs to book one specific fifteen-minute appointment inside that
+window. Turning a broad availability window into discrete bookable slots is the
+easy half.
+
+The hard half is this. Two patients want the same ten o'clock slot, and they
+click at exactly the same moment. What happens?
+
+So here is the one claim I want to make, and I'll spend the next twelve minutes
+backing it up. This system will never double-book a slot. Not under load, not
+across multiple servers, not ever. Let me show you why.
+\end{script}
+
+% ---
+\seg{Segment 2 --- Stack and architecture}{1:19}{190}{Editor, repository tree}
+
+\stage{Switch to the editor. Show the repository tree, then expand \texttt{src/}.}
+
+\begin{script}
+A quick tour of the stack before we get to the interesting part.
+
+Node 22, TypeScript in strict mode, Express for HTTP, PostgreSQL through Prisma,
+Redis for distributed locking, caching and rate limiting, and BullMQ for
+background jobs. All of it containerised, with GitHub Actions running the full
+suite on every push.
+
+That's about ten thousand eight hundred lines of TypeScript, and roughly three
+thousand more of tests.
+\end{script}
+
+\stage{Point at each folder as you name it: \texttt{routes/}, \texttt{controllers/}, \texttt{services/}, \texttt{repositories/}.}
+
+\begin{script}
+The architecture is conventionally layered, and I was strict about it.
+Controllers do exactly three things: translate HTTP into service arguments,
+call one service method, and translate the result back. No branching on domain
+state, no database access. Every real decision lives in the service layer, and
+everything that touches Postgres goes through a repository.
+\end{script}
+
+\stage{Open \texttt{src/services/slot-generator.ts}. Scroll slowly through the top of the file.}
+
+\begin{script}
+One module deserves a mention now, because it comes back later. The slot
+generator is completely pure. No database, no clock, no input or output of any
+kind --- availability goes in, slots come out. That's what makes the hardest
+arithmetic in the system directly testable.
+\end{script}
+
+% ---
+\seg{Segment 3 --- Slot generation and timezones}{2:16}{330}{Demo console, ``Find a slot''}
+
+\stage{Switch to browser tab 1. Dr Anaya Mehta should already be selected.}
+
+\begin{script}
+Let's look at the running system. This is a small demo console I built on top
+of the API --- plain HTML and JavaScript, served by the same Express app, no
+framework and no build step. It exists purely to make the backend's behaviour
+visible.
+
+We're looking at Doctor Anaya Mehta, who works in Asia slash Kolkata. Fifteen
+minute consultations, with a five minute buffer between them.
+
+Now look at the first three slots. Ten o'clock. Ten twenty. Ten forty. Fifteen
+minutes of appointment plus five minutes of buffer, so they start twenty
+minutes apart. That is the worked example from the assessment brief, and it
+falls straight out of that pure generator I just showed you.
+\end{script}
+
+\stage{Point at the three time rows inside a single slot card.}
+
+\begin{script}
+Here's the part I find more interesting. Every slot is stored in the database
+as one UTC instant --- that's this row here. But it's rendered three ways: the
+UTC instant, the viewer's local time, and the doctor's local time. And
+critically, all three of those are computed by the server, not by the browser.
+\end{script}
+
+\stage{Change ``View times in'' to \textbf{America/New\_York}. Click \textbf{Search}.}
+
+\begin{script}
+Same slots. Same underlying instants. Now displayed in New York time, with the
+doctor's Kolkata time alongside. Because when a patient in New York and a
+doctor in India both talk about the ten forty appointment, they have to be
+talking about the same moment.
+
+Two bugs I hit here are worth mentioning, because they're the kind of thing
+this domain is full of.
+
+The first one: Luxon's plus-minutes function measures elapsed time. So on a
+spring-forward day, midnight plus a hundred and eighty minutes is four in the
+morning, not three. Every slot after the transition was silently shifting by an
+hour. A test caught that one.
+
+The second: I had a validator that happily accepted the string I-S-T. The
+timezone database says that means Israel Standard Time. Almost everyone typing
+it means India. That's a three and a half hour error on every single
+appointment. So now I require the full Area slash Location form, and U-T-C is
+the only bare name I allow.
+\end{script}
+
+% ---
+\seg{Segment 4 --- Booking lifecycle}{1:52}{270}{Demo console, signed in as a patient}
+
+\stage{Click \textbf{Sign in}, click the \textbf{Patient} chip, click \textbf{Sign in}.}
+
+\begin{script}
+Let me sign in as a patient and walk through the booking lifecycle.
+
+Authentication is JWT, with short-lived access tokens and refresh token
+rotation. Every refresh issues a new token and invalidates the old one. And if
+a token is ever replayed --- which means it was stolen --- the entire session
+family is revoked immediately.
+\end{script}
+
+\stage{Book the 10:00 slot. Let the network panel on the right update.}
+
+\begin{script}
+Booked, with a confirmation code. And notice this panel on the right. That's
+every API call the page makes, with its status code, its timing, and its
+request id. Every response carries that request id, so when a user reports a
+problem, that single value takes you to the exact log line.
+\end{script}
+
+\stage{Click \textbf{Hold} on a different slot, then open ``Holds \& waitlist''.}
+
+\begin{script}
+Now let me hold a slot instead of booking it. A hold is the checkout window ---
+a short reservation while a patient finishes paying. That countdown is real and
+it's enforced by the server. When it expires, the slot returns to the pool
+automatically. Nothing has to succeed for that to happen, and that matters,
+because the failure path is the one that has to be reliable.
+\end{script}
+
+\stage{Open ``My bookings''. Click \textbf{Reschedule}. Wait for the toast, then click \textbf{Cancel}.}
+
+\begin{script}
+Over in my bookings, let me reschedule this appointment.
+
+It moved to a new slot, and it kept the same booking id. Reschedule is one
+atomic operation --- deliberately not a cancel followed by a rebook, because
+that leaves a window where the patient has given up their appointment and
+hasn't got the new one yet. Here, if the target slot is taken, the original
+booking is still theirs.
+
+And cancelling puts the slot straight back into public availability.
+\end{script}
+
+% ---
+\seg{Segment 5 --- The concurrency proof}{2:46}{400}{Console, then terminal, then the migration SQL}
+
+\begin{note}
+\textbf{This is the segment that matters.} Three beats: show the race, prove
+the lock is not doing the work, then show the constraint that is. If you are
+short on time elsewhere, cut segments 6 through 8 --- never this one.
+\end{note}
+
+\subsubsection*{Beat 1 --- show the race}
+
+\stage{Open the ``Concurrency lab'' view. Pause a moment on the three layer cards.}
+
+\begin{script}
+This is the core of the assessment, so I'm going to spend real time here.
+
+Three layers guard a booking. A Redis distributed lock. A SELECT FOR UPDATE row
+lock inside the transaction. And a partial unique index in Postgres. Only the
+third one is the actual guarantee --- but let me show you the race first.
+\end{script}
+
+\stage{Leave contenders at 12. Click \textbf{Fire simultaneously}.}
+
+\begin{script}
+Twelve different patient accounts, all signed in, twelve booking requests for
+one single slot, released simultaneously.
+
+One two-oh-one Created. Eleven four-oh-nine Conflicts. About a hundred and
+thirty milliseconds, end to end.
+
+They're twelve separate accounts on purpose. The booking rate limiter allows
+thirty requests per minute per user, so if I fired all twelve from one account,
+I'd be showing you the rate limiter rather than the concurrency control.
+\end{script}
+
+\subsubsection*{Beat 2 --- prove the lock is not the guarantee}
+
+\begin{script}
+Now here's the claim I actually want to defend. That Redis lock is not what
+makes this correct.
+
+A lease-based distributed lock cannot be made safe. If a process pauses --- a
+long garbage collection, say --- past the lock's expiry, it wakes up believing
+it still holds a lock that Redis has already handed to somebody else. And then
+it writes. Treating Redlock as a correctness mechanism is precisely how systems
+double-book.
+
+So in this system, the lock is a throughput optimisation. It stops a hundred
+contenders from each holding a database connection while they queue on the same
+row. It is not the guarantee.
+
+And I can prove that, by removing it.
+\end{script}
+
+\stage{Switch to the terminal and run:}
+\begin{lstlisting}
+npx jest tests/integration/booking-concurrency.test.ts \
+  -t "survives with the Redis lock removed"
+\end{lstlisting}
+
+\begin{script}
+This test stubs the lock out completely --- no Redis coordination at all ---
+fires the contenders, and still asserts exactly one winner.
+
+There it is, passing. That test is the actual proof. Everything else is
+performance.
+\end{script}
+
+\subsubsection*{Beat 3 --- show the constraint}
+
+\stage{Open \texttt{prisma/migrations/20260726024738\_init/migration.sql} and scroll to line 437.}
+
+\begin{lstlisting}
+CREATE UNIQUE INDEX "bookings_one_confirmed_per_slot"
+  ON bookings ("slotId") WHERE status = 'CONFIRMED';
+\end{lstlisting}
+
+\begin{script}
+So what is holding the line? This, in the migration.
+
+A partial unique index. Unique on slot id, where the status is confirmed. One
+confirmed booking per slot.
+
+Postgres will refuse the second write regardless of what the application code
+believes, regardless of how many API replicas are running, and regardless of
+whether Redis is even up.
+
+And that WHERE clause is doing real work. It's scoped to confirmed bookings
+only --- which is exactly why the cancellation you saw a minute ago frees the
+slot up again. The cancelled row stops counting, so the slot can be re-booked,
+and still only once.
+\end{script}
+
+\begin{note}
+\textbf{Likely follow-up question, worth having ready:} why pessimistic locking
+for bookings but optimistic locking for availability? Because booking
+contention is concentrated by nature --- everyone wants the ten o'clock --- so
+optimistic locking makes every loser burn a full transaction to discover
+something a retry can never fix. Availability edits are the opposite: rare, and
+a stale write there genuinely should be rejected. So those carry version
+columns.
+\end{note}
+
+% ---
+\seg{Segment 6 --- Retroactive availability changes}{1:12}{175}{Editor, availability.service.ts}
+
+\stage{Open \texttt{src/services/availability.service.ts} and scroll to the \texttt{update()} header comment.}
+
+\begin{script}
+Here's the design question I found hardest, and I don't think there's a clean
+answer to it.
+
+A doctor publishes Monday, ten to six. A patient books three o'clock. Then the
+doctor shrinks Monday to ten until two. There is now a confirmed appointment
+sitting outside the doctor's stated availability.
+
+Three options. Auto-cancel the booking --- that silently breaks a commitment
+between two people, and the patient finds out later. Reject the availability
+change outright --- now one appointment freezes the doctor's entire schedule.
+Or keep the booking and report the conflict.
+
+I chose the third. Future unbooked slots outside the new window get blocked.
+Future booked slots are left completely untouched, and come back in the API
+response as orphaned bookings. Past slots are never modified at all.
+
+That does leave the system in an inconsistent state, and I want to be honest
+about that. But it's a transient inconsistency, it's visible, and it's
+actionable --- and no commitment between two humans got cancelled by a
+background job.
+\end{script}
+
+% ---
+\seg{Segment 7 --- Events, outbox and workers}{1:08}{165}{Editor, outbox.repository.ts}
+
+\stage{Open \texttt{src/repositories/outbox.repository.ts}.}
+
+\begin{script}
+Briefly on the event pipeline, because there's one decision worth explaining.
+
+When a booking is created, a notification has to go out. The naive
+implementation writes the booking, commits, and then publishes the event. If
+the process dies between those two steps, the appointment exists and the
+patient is never told.
+
+So instead, the event is written to an outbox table inside the same transaction
+as the booking. Either both land or neither does. A separate relay then polls
+that table using SKIP LOCKED, and publishes from there. That gives me
+at-least-once delivery with idempotent consumers --- which is a far easier
+problem to solve correctly than distributed atomicity.
+
+One thing I want to be upfront about. The final delivery hop to an email
+provider is stubbed --- it logs instead of sending. Everything around it is
+real: recipient resolution, per-recipient timezone rendering, retries with
+backoff, deduplication by event id. Swapping in a real provider is one function
+body.
+\end{script}
+
+% ---
+\seg{Segment 8 --- Ops surface and CI}{1:02}{150}{Browser tab 2, then terminal}
+
+\stage{Switch to browser tab 2 (\texttt{/docs}). Scroll the endpoint list.}
+
+\begin{script}
+The operational surface, quickly.
+
+Hand-written OpenAPI documentation covering the whole API. I wrote it by hand
+rather than generating it, because generators describe types --- and what
+actually matters to somebody integrating is behaviour. What a four-oh-nine
+means on this endpoint is the useful part.
+\end{script}
+
+\stage{Visit \texttt{/health}, then \texttt{/metrics}. A couple of seconds each.}
+
+\begin{script}
+Health endpoints with real dependency checks, split into liveness and
+readiness. Prometheus metrics. And the whole stack --- Postgres, Redis,
+migrations, the API and the worker --- comes up with a single docker compose
+command.
+
+CI runs lint, formatting, typecheck, the full test suite against real Postgres
+and real Redis, and a Docker build, on every push. There's also an explicit
+check that the partial unique index still exists --- because if somebody
+regenerated that migration and dropped it, every test would still pass and the
+guarantee would be silently gone.
+\end{script}
+
+% ---
+\seg{Segment 9 --- Trade-offs and close}{0:45}{110}{Console or camera}
+
+\begin{script}
+Two trade-offs to close on.
+
+Slots are materialised as real rows, rather than computed on read. That costs
+storage and it costs a generation job. But a computed slot has no identity ---
+there's nothing for FOR UPDATE to lock, and nothing for a unique index to
+protect. The guarantee would have had to live in application code, which is
+exactly what fails under concurrency.
+
+And on the daylight saving fall-back, a doctor loses about an hour of inventory
+once a year. I took that over ambiguous local times.
+
+Next steps would be partitioning these tables before they get large, calendar
+sync, and a real notification provider.
+
+Thanks for watching.
+\end{script}
+
+% =============================================================================
+\section{If something goes wrong mid-recording}
+
+\begin{longtable}{@{}p{5.2cm} p{9.8cm}@{}}
+\toprule
+\textbf{Symptom} & \textbf{Fix} \\
+\midrule
+\endhead
+Slots don't start at 10:00 & \texttt{npm run seed}, reload the console. \\
+Health dot is red & \texttt{docker compose up -d postgres redis}, wait for healthy. \\
+Race returns 429s & You re-ran it many times inside one minute. Wait 60 seconds. \\
+Race returns more than one 201 & Stop recording. That would be a real defect --- do not narrate around it. \\
+``This slot has already been booked'' & Left over from an earlier take. Re-seed. \\
+Reschedule fails & Widen the date range so a free slot exists to move into. \\
+Console won't load & Check \texttt{npm run dev} is running, and that the URL ends in \texttt{/app}. \\
+\bottomrule
+\end{longtable}
+
+% =============================================================================
+\section{Quick reference card}
+
+\subsection*{Accounts --- password \texttt{ClinzoDemo2026!}}
+
+\begin{longtable}{@{}p{5.8cm} p{2.2cm} p{6.4cm}@{}}
+\toprule
+\textbf{Email} & \textbf{Role} & \textbf{Notes} \\
+\midrule
+\endhead
+\texttt{dr.mehta@clinzo.test}     & Doctor  & Asia/Kolkata, 15 min + 5 min buffer \\
+\texttt{dr.okafor@clinzo.test}    & Doctor  & America/New\_York, 30 min, no buffer \\
+\texttt{patient1..12@clinzo.test} & Patient & Mixed timezones \\
+\texttt{admin@clinzo.test}        & Admin   & UTC \\
+\bottomrule
+\end{longtable}
+
+\subsection*{URLs}
+
+\begin{longtable}{@{}p{5.8cm} p{8.6cm}@{}}
+\toprule
+\textbf{What} & \textbf{Where} \\
+\midrule
+\endhead
+Demo console       & \texttt{http://localhost:3000/app} \\
+API docs (Swagger) & \texttt{http://localhost:3000/docs} \\
+Health             & \texttt{http://localhost:3000/health} \\
+Metrics            & \texttt{http://localhost:3000/metrics} \\
+\bottomrule
+\end{longtable}
+
+\subsection*{Numbers you may want to quote}
+
+\begin{longtable}{@{}p{4.2cm} p{10.2cm}@{}}
+\toprule
+185                & tests passing (117 unit, 68 integration) \\
+$\approx$10{,}800  & lines of TypeScript source \\
+12                 & Prisma models \\
+31                 & route registrations \\
+1 and 11           & 201s and 409s in a 12-way race, in $\approx$130\,ms \\
+\bottomrule
+\end{longtable}
+
+\vspace{10pt}
+\begin{note}
+\textbf{Before you upload.} Watch it back once, at normal speed, with audio on.
+Check three things: the code on screen is legible, the race result is readable,
+and the total is under fifteen minutes.
+\end{note}
+
+\end{document}

@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Clinzo — Scheduling Console</title>
+    <link rel="stylesheet" href="app.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🩺</text></svg>"
+    />
+  </head>
+  <body>
+    <!-- ===================================================================
+         Demo console for the Clinzo scheduling API.
+
+         This is a demonstration client, not a product UI. It exists to make
+         the backend's behaviour visible on screen: dual timezone rendering,
+         the hold TTL, and above all the concurrency guarantee.
+
+         Deliberately dependency-free and build-free — plain HTML/CSS/JS
+         served statically by the same Express app. Adding a framework would
+         mean a bundler, a second lockfile and a second CI job, none of which
+         make the backend easier to evaluate.
+         =================================================================== -->
+
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="brand-mark">🩺</span>
+        <div>
+          <h1>Clinzo</h1>
+          <p>Scheduling console</p>
+        </div>
+      </div>
+
+      <nav id="nav">
+        <button class="nav-item is-active" data-view="discover">
+          <span class="nav-ico">🔍</span> Find a slot
+        </button>
+        <button class="nav-item" data-view="bookings">
+          <span class="nav-ico">📋</span> My bookings
+        </button>
+        <button class="nav-item" data-view="holds">
+          <span class="nav-ico">⏳</span> Holds &amp; waitlist
+        </button>
+        <button class="nav-item" data-view="race">
+          <span class="nav-ico">⚡</span> Concurrency lab
+        </button>
+        <button class="nav-item" data-view="doctor">
+          <span class="nav-ico">🗓️</span> Doctor view
+        </button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="health" id="health">
+          <span class="dot" id="health-dot"></span>
+          <span id="health-text">checking…</span>
+        </div>
+        <a class="ext" href="/docs" target="_blank" rel="noopener">OpenAPI docs ↗</a>
+        <a class="ext" href="/metrics" target="_blank" rel="noopener">Prometheus metrics ↗</a>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div id="session" class="session">
+          <span class="muted">Not signed in</span>
+        </div>
+        <div class="topbar-actions">
+          <button id="btn-login" class="btn btn-primary">Sign in</button>
+          <button id="btn-logout" class="btn btn-ghost" hidden>Sign out</button>
+        </div>
+      </header>
+
+      <!-- ============================= DISCOVER ======================== -->
+      <section class="view is-active" data-view="discover">
+        <div class="view-head">
+          <h2>Find a slot</h2>
+          <p>
+            Slot discovery is public — no token required. Every time is rendered three ways by the
+            <em>server</em>: UTC instant, your timezone, and the doctor's timezone.
+          </p>
+        </div>
+
+        <div class="panel">
+          <div class="field-row">
+            <label class="field">
+              <span>Doctor</span>
+              <select id="doctor-select"></select>
+            </label>
+            <label class="field">
+              <span>From</span>
+              <input type="date" id="from-date" />
+            </label>
+            <label class="field">
+              <span>To</span>
+              <input type="date" id="to-date" />
+            </label>
+            <label class="field">
+              <span>View times in</span>
+              <select id="viewer-tz">
+                <option value="">— my browser timezone —</option>
+                <option value="Asia/Kolkata">Asia/Kolkata</option>
+                <option value="Europe/Berlin">Europe/Berlin</option>
+                <option value="America/New_York">America/New_York</option>
+                <option value="UTC">UTC</option>
+                <option value="Pacific/Auckland">Pacific/Auckland</option>
+              </select>
+            </label>
+            <button id="btn-search" class="btn btn-primary">Search</button>
+          </div>
+          <div id="tz-banner" class="tz-banner" hidden></div>
+        </div>
+
+        <div id="slots" class="slot-grid"></div>
+      </section>
+
+      <!-- ============================= BOOKINGS ======================== -->
+      <section class="view" data-view="bookings">
+        <div class="view-head">
+          <h2>My bookings</h2>
+          <p>
+            Cancel releases the slot back to the pool. Reschedule is atomic — it never leaves you
+            with zero bookings.
+          </p>
+        </div>
+        <div class="panel">
+          <button id="btn-refresh-bookings" class="btn">Refresh</button>
+        </div>
+        <div id="bookings" class="card-list"></div>
+      </section>
+
+      <!-- ============================= HOLDS =========================== -->
+      <section class="view" data-view="holds">
+        <div class="view-head">
+          <h2>Holds &amp; waitlist</h2>
+          <p>
+            A hold is a short reservation window — the checkout timer. It expires on its own;
+            nothing needs to succeed for the slot to come back.
+          </p>
+        </div>
+        <div class="panel">
+          <button id="btn-refresh-holds" class="btn">Refresh holds</button>
+          <button id="btn-join-waitlist" class="btn">Join waitlist for selected doctor</button>
+        </div>
+        <div id="holds" class="card-list"></div>
+        <h3 class="sub">Waitlist entries</h3>
+        <div id="waitlist" class="card-list"></div>
+      </section>
+
+      <!-- ============================= RACE ============================ -->
+      <section class="view" data-view="race">
+        <div class="view-head">
+          <h2>Concurrency lab</h2>
+          <p>
+            The core guarantee: <strong>one confirmed booking per slot, ever</strong>. This fires N
+            genuinely simultaneous booking requests at a single slot, from N different signed-in
+            patients.
+          </p>
+        </div>
+
+        <div class="layers">
+          <div class="layer">
+            <span class="layer-n">1</span>
+            <h4>Redis lock</h4>
+            <p>
+              Throughput only. Lease locks cannot be made safe against process pauses — never the
+              guarantee.
+            </p>
+          </div>
+          <div class="layer">
+            <span class="layer-n">2</span>
+            <h4>SELECT FOR UPDATE</h4>
+            <p>Closes the check-then-act window inside one transaction.</p>
+          </div>
+          <div class="layer is-load-bearing">
+            <span class="layer-n">3</span>
+            <h4>Partial unique index</h4>
+            <p>
+              <code>UNIQUE (slotId) WHERE status='CONFIRMED'</code> — this is what actually holds.
+            </p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="field-row">
+            <label class="field">
+              <span>Target slot</span>
+              <select id="race-slot"></select>
+            </label>
+            <label class="field field-sm">
+              <span>Contenders</span>
+              <input type="number" id="race-n" value="12" min="2" max="48" />
+            </label>
+            <button id="btn-race" class="btn btn-danger">Fire simultaneously</button>
+            <button id="btn-race-reset" class="btn btn-ghost">Reset slot</button>
+          </div>
+          <p class="hint">
+            Requests are spread across the 12 seeded patient accounts so the per-user booking rate
+            limit (30/min) never fires — what you see is the concurrency control, not the throttle.
+          </p>
+        </div>
+
+        <div id="race-result" class="race-result" hidden>
+          <div class="tally">
+            <div class="tally-item tally-win">
+              <span class="tally-num" id="tally-201">0</span>
+              <span class="tally-label">201 Created</span>
+            </div>
+            <div class="tally-item tally-lose">
+              <span class="tally-num" id="tally-409">0</span>
+              <span class="tally-label">409 Conflict</span>
+            </div>
+            <div class="tally-item tally-other">
+              <span class="tally-num" id="tally-other">0</span>
+              <span class="tally-label">Other</span>
+            </div>
+            <div class="tally-item">
+              <span class="tally-num" id="tally-ms">—</span>
+              <span class="tally-label">Wall clock</span>
+            </div>
+          </div>
+          <div id="race-grid" class="race-grid"></div>
+          <div id="race-verdict" class="verdict"></div>
+        </div>
+      </section>
+
+      <!-- ============================= DOCTOR =========================== -->
+      <section class="view" data-view="doctor">
+        <div class="view-head">
+          <h2>Doctor view</h2>
+          <p>
+            Sign in as <code>dr.mehta@clinzo.test</code> to see the full diary — including
+            <span class="pill pill-held">HELD</span> and
+            <span class="pill pill-blocked">BLOCKED</span> slots a patient never sees.
+          </p>
+        </div>
+        <div class="panel">
+          <button id="btn-diary" class="btn btn-primary">Load my diary</button>
+          <span id="diary-counts" class="counts"></span>
+        </div>
+        <div id="diary" class="slot-grid"></div>
+      </section>
+    </main>
+
+    <!-- ============================ REQUEST LOG ========================= -->
+    <aside class="console" id="console">
+      <header>
+        <h3>Network</h3>
+        <button id="btn-clear-log" class="btn btn-mini">Clear</button>
+      </header>
+      <div id="log" class="log"></div>
+    </aside>
+
+    <!-- ============================ LOGIN MODAL ========================= -->
+    <div class="modal" id="login-modal" hidden>
+      <div class="modal-card">
+        <h3>Sign in</h3>
+        <p class="muted">Seeded demo accounts — password is prefilled.</p>
+        <div class="quick-accounts" id="quick-accounts"></div>
+        <label class="field">
+          <span>Email</span>
+          <input type="email" id="login-email" value="patient1@clinzo.test" />
+        </label>
+        <label class="field">
+          <span>Password</span>
+          <input type="password" id="login-password" value="ClinzoDemo2026!" />
+        </label>
+        <div id="login-error" class="error-box" hidden></div>
+        <div class="modal-actions">
+          <button id="btn-do-login" class="btn btn-primary">Sign in</button>
+          <button id="btn-cancel-login" class="btn btn-ghost">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toasts" class="toasts"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

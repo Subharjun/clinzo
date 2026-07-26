@@ -111,6 +111,7 @@ earlier ones.
 | 10  | Tests                     | ✅     | 4 unit + 4 integration suites, **incl. the 100-way concurrency proof**                                              |
 | 11  | Docker + CI + hooks       | ✅     | `Dockerfile` (3-stage), `docker-compose.yml` (5 services), `.github/workflows/ci.yml` (4 jobs), `.husky/*`          |
 | 12  | Documentation             | ✅     | `README.md`, this file, `scripts/generate-secrets.sh`                                                               |
+| 13  | Demo console + video prep | ✅     | `public/` (dependency-free client at `/app`), `docs/video-script.tex`                                               |
 
 ### 4.1 API surface — 31 route registrations (27 business + 4 ops)
 
@@ -338,19 +339,55 @@ in the production runtime path. `npm audit fix` cannot resolve it without
 `--force` (major bumps of jest + eslint). Left as-is deliberately — this is
 precisely the case the step's `continue-on-error: true` comment describes.
 
-### 8.2 Suggested video outline (~15 min)
+### 8.2 Video: the script is written
 
-1. **(1 min)** The problem and the one guarantee: no double-booking, ever.
-2. **(3 min)** The three concurrency layers — and why only the DB index is
-   load-bearing. Show the migration SQL.
-3. **(2 min)** Live: run `booking-concurrency.test.ts`. Highlight the
-   _lock-removed_ test as the actual proof.
-4. **(2 min)** Slot generation — the pure module, the 10:00/10:20/10:40 worked
-   example, the DST bug the tests caught.
-5. **(2 min)** Retroactive availability changes — the three options and why (c).
-6. **(2 min)** Outbox → relay → worker; why dual-write loses notifications.
-7. **(2 min)** `docker compose up`, `/docs`, `/health`, `/metrics`.
-8. **(1 min)** Trade-offs and what I'd do next.
+**`docs/video-script.tex`** — a full **verbatim narration script**, not an
+outline. Every line to be spoken is in a "SAY THIS" box; stage directions are
+separate. Nine segments, ~12 min 45 s of speech at 145 wpm, against a 15 min
+limit. Includes a pre-flight checklist, a shot list with running timecodes, a
+mid-recording troubleshooting table, and a credentials/URL reference card.
+
+Upload the single `.tex` to Overleaf and hit Recompile — standard TeX Live
+packages only, pdfLaTeX, no shell-escape. Verified: compiles clean to 9 A4
+pages (checked locally with `tectonic`).
+
+Segment order: problem → stack → slot generation and timezones → booking
+lifecycle → **concurrency proof** → retroactive availability → outbox →
+ops/CI → trade-offs.
+
+> The script tells you to re-seed immediately before recording. Take that
+> seriously: the opening shot depends on Dr Mehta's first three slots being
+> free, because they are the brief's worked example (10:00 / 10:20 / 10:40).
+
+### 8.3 Demo console — what the video actually shows
+
+The video is driven by **`/app`**, a demo client added for this purpose.
+
+| Property        | Choice                                                                               |
+| --------------- | ------------------------------------------------------------------------------------ |
+| Location        | `public/{index.html,app.css,app.js}`, served by Express at `/app`                    |
+| Dependencies    | **None.** No framework, no bundler, no build step, no second lockfile                |
+| Mount point     | Before `globalLimiter` — page assets must not consume a caller's request budget      |
+| Path resolution | `path.resolve(__dirname, '..', 'public')` — works from both `src/` (tsx) and `dist/` |
+| Docker          | `public/` is copied into the runtime stage, so `/app` works in the container too     |
+
+Views: slot discovery with **three server-rendered timezones per slot**,
+booking, holds with a live TTL countdown, waitlist, the doctor's diary
+(including `HELD` / `BLOCKED`), a live network panel, and the **concurrency
+lab**.
+
+**The concurrency lab fires across the 12 seeded patient accounts, not one.**
+This is load-bearing, not decoration: `bookingLimiter` is keyed per user at
+30/min, so N requests from a single account would return `429`s and the demo
+would be showing the throttle instead of the concurrency control. Verified in
+a real browser: 12 contenders → **1× 201, 11× 409 `SLOT_UNAVAILABLE`, ~130 ms,
+zero 429s**.
+
+Its pass/fail verdict deliberately rests on the response tally alone. Public
+availability is polled and reported _separately_, because that listing is
+cached for `SLOT_CACHE_TTL_SECONDS` (15) — a read issued milliseconds after the
+race can legitimately still show the slot, and folding that into the pass
+criterion would produce false failures.
 
 ---
 
@@ -482,6 +519,15 @@ Fixed doctor IDs (stable across re-seeds):
 - Dr Mehta: `aaaaaaaa-1111-4111-8111-aaaaaaaaaaaa`
 - Dr Okafor: `bbbbbbbb-2222-4222-8222-bbbbbbbbbbbb`
 
+### URLs
+
+| What         | Where                           |
+| ------------ | ------------------------------- |
+| Demo console | <http://localhost:3000/app>     |
+| Swagger UI   | <http://localhost:3000/docs>    |
+| Health       | <http://localhost:3000/health>  |
+| Metrics      | <http://localhost:3000/metrics> |
+
 ### Ports
 
 | Service    | Port                                |
@@ -501,4 +547,5 @@ npm run prisma:studio                 # browse the database
 docker compose up -d --build          # full stack
 docker compose logs -f api worker     # tail logs
 ./scripts/generate-secrets.sh         # fresh JWT secrets into .env
+open http://localhost:3000/app        # the demo console used in the video
 ```

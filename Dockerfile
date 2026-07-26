@@ -61,6 +61,7 @@ ENV NODE_ENV=production \
 # Run unprivileged. The `node` user ships with the base image.
 COPY --chown=node:node --from=build /app/node_modules ./node_modules
 COPY --chown=node:node --from=build /app/dist ./dist
+COPY --chown=node:node --from=build /app/public ./public
 COPY --chown=node:node --from=build /app/prisma ./prisma
 COPY --chown=node:node --from=build /app/package.json ./package.json
 

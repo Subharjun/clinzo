@@ -1,3 +1,4 @@
+import path from 'node:path';
 import express, { type Application } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -110,6 +111,22 @@ export function createApp(): Application {
     res.json(openApiDocument);
   });
 
+  // ---- 6b. Demo console ---------------------------------------------------
+  // A dependency-free static client used to demonstrate the API. Mounted
+  // before the rate limiter deliberately: page assets are not API calls and
+  // must not consume a caller's request budget — otherwise a reload during
+  // the concurrency demo would eat into the very quota being demonstrated.
+  //
+  // `../public` resolves correctly both from `src/` under tsx and from
+  // `dist/` after a build, because both sit one level below the project root.
+  app.use(
+    '/app',
+    express.static(path.resolve(__dirname, '..', 'public'), {
+      index: 'index.html',
+      maxAge: isProduction ? '1h' : 0,
+    }),
+  );
+
   // ---- 7. Rate limiting ---------------------------------------------------
   app.use(globalLimiter);
 
@@ -124,6 +141,7 @@ export function createApp(): Application {
       version: '1.0.0',
       documentation: '/docs',
       health: '/health',
+      demoConsole: '/app',
     });
   });
 

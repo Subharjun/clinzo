@@ -49,6 +49,28 @@ export default tseslint.config(
     },
   },
   {
+    // The demo console runs in a browser, not in Node: different globals, and
+    // it is plain script-tag JavaScript rather than a module.
+    files: ['public/**/*.js'],
+    languageOptions: {
+      sourceType: 'script',
+      globals: {
+        window: 'readonly',
+        document: 'readonly',
+        fetch: 'readonly',
+        crypto: 'readonly',
+        performance: 'readonly',
+        URLSearchParams: 'readonly',
+        Headers: 'readonly',
+        Response: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+      },
+    },
+  },
+  {
     // CommonJS tooling config that Node loads directly, not through the
     // TypeScript build.
     files: ['*.config.js', 'jest.config.js'],
