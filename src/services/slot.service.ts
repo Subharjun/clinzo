@@ -131,8 +131,15 @@ export class SlotService {
     from: Date,
     to: Date,
     status?: SlotStatus,
-  ): Promise<{ slots: Slot[]; counts: Record<SlotStatus, number> }> {
+  ): Promise<{ slots: Slot[]; counts: Record<SlotStatus, number>; timezone: string }> {
     this.assertRangeIsSane(from, to);
+
+    // The doctor's own zone is resolved here rather than left to the caller:
+    // a diary rendered in UTC is unreadable to the person whose diary it is,
+    // and pushing the conversion to the client would put timezone logic in two
+    // places with two chances to disagree.
+    const doctor = await doctorRepository.findById(doctorId);
+    if (!doctor) throw new NotFoundError('Doctor');
 
     const [slots, counts] = await Promise.all([
       prisma.slot.findMany({
@@ -147,7 +154,7 @@ export class SlotService {
       slotRepository.countByStatus(doctorId, from, to),
     ]);
 
-    return { slots, counts };
+    return { slots, counts, timezone: doctor.timezone };
   }
 
   async getById(slotId: string): Promise<Slot> {

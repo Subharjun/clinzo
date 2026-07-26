@@ -819,11 +819,20 @@ async function loadDiary() {
 
   for (const slot of result.payload.data) {
     const card = el('div', 'slot is-static');
-    const time = new Date(slot.startsAt);
+
+    // Server-rendered in the doctor's own zone, same as the public listing.
+    // Formatting the UTC instant here instead would put timezone logic in the
+    // browser and contradict the rest of the app.
     card.append(
-      el('div', 'slot-time', time.toISOString().slice(11, 16)),
-      el('div', 'slot-date', `${slot.startsAt.slice(0, 10)} · UTC`),
+      el('div', 'slot-time', slot.local.startTime),
+      el('div', 'slot-date', `${slot.local.date} · ${slot.local.timezone}`),
     );
+
+    const zones = el('div', 'slot-tzs');
+    const utcRow = el('div');
+    utcRow.append(el('b', null, slot.startsAt.slice(11, 16)), document.createTextNode('  UTC'));
+    zones.append(utcRow);
+    card.append(zones);
     const meta = el('div', 'slot-meta');
     meta.append(
       el('span', `pill pill-${slot.status.toLowerCase()}`, slot.status),

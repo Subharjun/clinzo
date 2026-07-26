@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import type { SlotStatus } from '@prisma/client';
 import { slotService } from '../services/slot.service';
 import { sendSuccess } from '../utils/http';
+import { toZonedDate, toZonedTime } from '../utils/time';
 
 /** `/doctors/:id/slots` and the doctor's own diary view. */
 
@@ -55,9 +56,17 @@ export const slotController = {
         heldUntil: slot.heldUntil?.toISOString() ?? null,
         blockedReason: slot.blockedReason,
         availabilityId: slot.availabilityId,
+        // Rendered in the doctor's own zone, matching the public listing's
+        // `local` block. Without this a doctor reads their own diary in UTC.
+        local: {
+          timezone: result.timezone,
+          date: toZonedDate(slot.startsAt, result.timezone),
+          startTime: toZonedTime(slot.startsAt, result.timezone),
+          endTime: toZonedTime(slot.endsAt, result.timezone),
+        },
       })),
       200,
-      { counts: result.counts },
+      { counts: result.counts, timezone: result.timezone },
     );
   },
 };
