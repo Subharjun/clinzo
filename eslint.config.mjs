@@ -42,7 +42,9 @@ export default tseslint.config(
     },
   },
   {
-    files: ['tests/**/*.ts', 'prisma/seed.ts', 'scripts/**/*.ts'],
+    // Operator-facing scripts: these are run by hand from a terminal and their
+    // output *is* the interface, so `console` is correct here.
+    files: ['tests/**/*.ts', 'prisma/*.ts', 'scripts/**/*.ts'],
     rules: {
       'no-console': 'off',
       '@typescript-eslint/no-explicit-any': 'off',

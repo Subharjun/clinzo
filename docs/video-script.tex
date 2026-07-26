@@ -117,15 +117,22 @@ would actually damage the submission.
 \begin{lstlisting}
 cd ~/Desktop/Clinzo
 docker compose up -d postgres redis   # wait until both report healthy
-npm run seed                          # 2 doctors, 12 patients, ~600 slots
+npm run seed                          # accounts, availability, slots (idempotent)
+npm run demo:reset                    # clear bookings/holds, all slots AVAILABLE
 npm run dev                           # API on :3000
 \end{lstlisting}
 
 \begin{note}
-\textbf{Always re-seed immediately before recording.} The opening shot depends
-on Dr Mehta's first three slots being free, because they are the worked example
-from the brief: \textbf{10:00, 10:20, 10:40}. If you have been clicking around,
-those will be booked and the strongest visual in the video is gone.
+\textbf{Run \texttt{demo:reset} immediately before recording.} The opening shot
+depends on Dr Mehta's first three slots being free, because they are the worked
+example from the brief: \textbf{10:00, 10:20, 10:40}. If you have been clicking
+around, those will be booked and the strongest visual in the video is gone.
+
+\textbf{\texttt{npm run seed} alone will not fix that.} The seed is idempotent
+by upsert --- deliberately, so it is safe to re-run against a database you are
+working in --- which means it never deletes bookings or holds.
+\texttt{npm run demo:reset} is the one that clears the transactional state and
+returns every slot to \texttt{AVAILABLE}.
 \end{note}
 
 \subsection*{2. Windows you will need}
@@ -151,7 +158,9 @@ those will be booked and the strongest visual in the video is gone.
   \item Test the microphone first. Bad audio sinks a good demo.
   \item Record \textbf{one take per segment}. Re-recording ninety seconds is
         painless; re-recording thirteen minutes is not.
-  \item Reset between takes with \texttt{npm run seed} (about three seconds).
+  \item Reset between takes with \texttt{npm run demo:reset} (about a second).
+        Then hard-reload the console --- the slot listing is cached for 15
+        seconds, so a soft refresh can still show the old state.
 \end{itemize}
 
 % =============================================================================
@@ -549,11 +558,11 @@ Thanks for watching.
 \textbf{Symptom} & \textbf{Fix} \\
 \midrule
 \endhead
-Slots don't start at 10:00 & \texttt{npm run seed}, reload the console. \\
+Slots don't start at 10:00 & \texttt{npm run demo:reset}, then hard-reload. \\
 Health dot is red & \texttt{docker compose up -d postgres redis}, wait for healthy. \\
 Race returns 429s & You re-ran it many times inside one minute. Wait 60 seconds. \\
 Race returns more than one 201 & Stop recording. That would be a real defect --- do not narrate around it. \\
-``This slot has already been booked'' & Left over from an earlier take. Re-seed. \\
+``This slot has already been booked'' & Left over from an earlier take. Run \texttt{npm run demo:reset}. \\
 Reschedule fails & Widen the date range so a free slot exists to move into. \\
 Console won't load & Check \texttt{npm run dev} is running, and that the URL ends in \texttt{/app}. \\
 \bottomrule

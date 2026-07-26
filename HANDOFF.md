@@ -355,9 +355,14 @@ Segment order: problem → stack → slot generation and timezones → booking
 lifecycle → **concurrency proof** → retroactive availability → outbox →
 ops/CI → trade-offs.
 
-> The script tells you to re-seed immediately before recording. Take that
-> seriously: the opening shot depends on Dr Mehta's first three slots being
-> free, because they are the brief's worked example (10:00 / 10:20 / 10:40).
+> **Reset with `npm run demo:reset`, not `npm run seed`.** The seed is
+> idempotent by upsert — safe to re-run against a live database, and therefore
+> it never deletes bookings or holds. `demo:reset` (added in
+> `prisma/reset-demo.ts`) clears bookings, holds, waitlist, outbox, idempotency
+> keys and audit rows, and returns every slot to `AVAILABLE`. The opening shot
+> depends on it: Dr Mehta's first three slots must be free, because they are the
+> brief's worked example (10:00 / 10:20 / 10:40). Hard-reload afterwards — the
+> listing is cached for 15s.
 
 ### 8.3 Demo console — what the video actually shows
 
@@ -542,7 +547,8 @@ Fixed doctor IDs (stable across re-seeds):
 npm run dev / npm run dev:worker      # hot-reloading API / worker
 npm test                              # everything (needs postgres + redis)
 npm run test:unit                     # no infrastructure needed
-npm run seed                          # reset demo data
+npm run seed                          # accounts/availability/slots (idempotent)
+npm run demo:reset                    # clear bookings/holds, all slots AVAILABLE
 npm run prisma:studio                 # browse the database
 docker compose up -d --build          # full stack
 docker compose logs -f api worker     # tail logs
