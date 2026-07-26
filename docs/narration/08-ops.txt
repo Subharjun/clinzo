@@ -1,0 +1,5 @@
+Hand written OpenAPI documentation, written by hand because generators describe types, while what matters to somebody integrating is behaviour.
+
+Health endpoints with real dependency checks, and Prometheus metrics. The whole stack comes up with a single docker compose command.
+
+C I runs lint, typecheck, the full test suite against real Postgres and real Redis, and a Docker build, on every push. It also asserts that the partial unique index still exists, because if that were dropped, every test would still pass and the guarantee would be silently gone.

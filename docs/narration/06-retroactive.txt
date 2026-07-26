@@ -1,0 +1,7 @@
+The hardest design question in the system.
+
+A doctor publishes Monday, ten to six. A patient books three in the afternoon. Then the doctor shrinks Monday to ten until two. There is now a confirmed appointment sitting outside the doctor's stated availability.
+
+Auto cancelling the booking silently breaks a commitment between two people. Rejecting the change lets one appointment freeze an entire schedule. The third option is to keep the booking and report the conflict.
+
+That is what this does. Future unbooked slots outside the new window are blocked. Future booked slots are left untouched and returned as orphaned bookings. Past slots are never modified. The inconsistency is transient, visible, and actionable.

@@ -339,30 +339,47 @@ in the production runtime path. `npm audit fix` cannot resolve it without
 `--force` (major bumps of jest + eslint). Left as-is deliberately — this is
 precisely the case the step's `continue-on-error: true` comment describes.
 
-### 8.2 Video: the script is written
+### 8.2 Video: shot list + AI voiceover (no live narration needed)
 
-**`docs/video-script.tex`** — a full **verbatim narration script**, not an
-outline. Every line to be spoken is in a "SAY THIS" box; stage directions are
-separate. Nine segments, ~12 min 45 s of speech at 145 wpm, against a 15 min
-limit. Includes a pre-flight checklist, a shot list with running timecodes, a
-mid-recording troubleshooting table, and a credentials/URL reference card.
+**`docs/video-script.tex`** — a shot list, not a teleprompter. Each of the nine
+segments has two halves:
 
-Upload the single `.tex` to Overleaf and hit Recompile — standard TeX Live
-packages only, pdfLaTeX, no shell-escape. Verified: compiles clean to 9 A4
-pages (checked locally with `tectonic`).
+- **WHAT TO SHOW** — a per-segment table of time offsets, what is on screen at
+  each offset, and which control to click.
+- **NARRATION** — the words for an AI voice, written _for speech synthesis_:
+  HTTP codes spelled `four oh nine` so they aren't read as "four hundred and
+  nine", acronyms spaced (`H T T P`, `J W T`, `C I`), no symbols the engine has
+  to guess at. **Do not re-punctuate it into normal prose — it will sound worse.**
 
-Segment order: problem → stack → slot generation and timezones → booking
-lifecycle → **concurrency proof** → retroactive availability → outbox →
-ops/CI → trade-offs.
+**Runtime 8:50** (1,368 words at 155 wpm), against a 15-minute limit.
 
-> **Reset with `npm run demo:reset`, not `npm run seed`.** The seed is
-> idempotent by upsert — safe to re-run against a live database, and therefore
-> it never deletes bookings or holds. `demo:reset` (added in
-> `prisma/reset-demo.ts`) clears bookings, holds, waitlist, outbox, idempotency
-> keys and audit rows, and returns every slot to `AVAILABLE`. The opening shot
-> depends on it: Dr Mehta's first three slots must be free, because they are the
-> brief's worked example (10:00 / 10:20 / 10:40). Hard-reload afterwards — the
-> listing is cached for 15s.
+**`docs/narration/`** — the same nine blocks as plain `.txt`, far easier to
+paste into a TTS tool than a PDF, plus `full-script.txt` with all nine
+concatenated.
+
+| #   | Segment                  | Length | Ends |
+| --- | ------------------------ | ------ | ---- |
+| 1   | Problem and guarantee    | 0:37   | 0:37 |
+| 2   | Stack and architecture   | 0:48   | 1:25 |
+| 3   | Slots and timezones      | 1:41   | 3:06 |
+| 4   | Booking lifecycle        | 1:09   | 4:15 |
+| 5   | **Concurrency proof**    | 2:06   | 6:21 |
+| 6   | Retroactive availability | 0:43   | 7:04 |
+| 7   | Outbox and workers       | 0:45   | 7:49 |
+| 8   | Ops surface and CI       | 0:34   | 8:23 |
+| 9   | Trade-offs and close     | 0:27   | 8:50 |
+
+**The production trick, and the reason it's segment-per-file:** generate the
+audio _first_, then screen-record each segment while playing its clip in
+headphones. Actions land in sync naturally and nothing needs trimming
+afterwards. Keeping nine clips instead of one means a retake of segment 5 costs
+30 seconds of re-rendering, not nine minutes.
+
+Compiles clean to 9 A4 pages under pdfLaTeX, standard TeX Live packages only,
+no shell-escape (verified locally with `tectonic`).
+
+> Reset with `npm run demo:reset` before every take and hard-reload after.
+> The opening shot needs Dr Mehta's 10:00 / 10:20 / 10:40 free.
 
 ### 8.3 Demo console — what the video actually shows
 

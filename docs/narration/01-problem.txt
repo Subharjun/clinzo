@@ -1,0 +1,7 @@
+This is Clinzo, a doctor slot scheduling backend built for the backend engineering assessment.
+
+The problem sounds simple. A doctor says: I work Mondays, ten in the morning to six in the evening. A patient needs to book one specific fifteen minute appointment inside that window.
+
+Turning a broad availability window into bookable slots is the easy half. The hard half is what happens when two patients want the same ten o'clock slot, and click at the same instant.
+
+So here is the claim this video defends. This system will never double book a slot.

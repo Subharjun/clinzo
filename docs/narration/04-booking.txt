@@ -1,0 +1,9 @@
+Signing in as a patient. Authentication is J W T, with short lived access tokens and refresh token rotation. If a refresh token is ever replayed, which means it was stolen, the entire session family is revoked.
+
+Booking the ten o'clock slot returns a confirmation code. The panel on the right shows every A P I call, with its status, its timing and its request id. Every response carries that request id, so a user report maps to exactly one log line.
+
+A hold is different from a booking. It is the checkout window, a short reservation while a patient finishes paying. The countdown is enforced by the server, and when it expires the slot returns to the pool on its own. Nothing has to succeed for that to happen.
+
+Rescheduling moves the appointment to a new slot and keeps the same booking id. It is one atomic operation, deliberately not a cancel followed by a rebook, because that would leave a window with no appointment at all.
+
+And cancelling puts the slot straight back into public availability.

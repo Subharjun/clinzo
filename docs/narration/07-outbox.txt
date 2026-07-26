@@ -1,0 +1,5 @@
+When a booking is created, a notification has to go out. Writing the booking, committing, and then publishing the event means that if the process dies in between, the appointment exists and the patient is never told.
+
+So the event is written to an outbox table, inside the same transaction as the booking. Either both land or neither does. A relay then polls that table using skip locked, and publishes from there. That gives at least once delivery with idempotent consumers, which is far easier to get right than distributed atomicity.
+
+One thing stated plainly: the final delivery hop to an email provider is stubbed. It logs instead of sending. Everything around it is real.

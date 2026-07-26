@@ -1,0 +1,7 @@
+The stack is Node twenty two, TypeScript in strict mode, Express, PostgreSQL through Prisma, Redis for locking, caching and rate limiting, and Bull M Q for background jobs. Everything is containerised, with GitHub Actions running the full test suite on every push.
+
+That is about ten thousand eight hundred lines of TypeScript, and three thousand more of tests.
+
+The architecture is layered, and strict about it. Controllers translate H T T P and nothing else. Every real decision lives in the service layer. Everything that touches Postgres goes through a repository.
+
+The slot generator is deliberately pure. No database, no clock, no input or output at all. Availability in, slots out. That is what makes the hardest arithmetic in the system directly testable.

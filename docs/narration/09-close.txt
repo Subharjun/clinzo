@@ -1,0 +1,5 @@
+Two trade offs worth naming. Slots are materialised as real rows rather than computed on read, because a computed slot has no identity, and nothing for a unique index to protect.
+
+And on the daylight saving fall back, a doctor loses about an hour of inventory once a year, which is the price of unambiguous local times.
+
+Next steps would be table partitioning, calendar sync, and a real notification provider.

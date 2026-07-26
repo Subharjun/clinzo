@@ -1,0 +1,13 @@
+This is a demo console, served by the same Express app. Plain HTML and JavaScript, no framework and no build step. It exists to make the backend's behaviour visible.
+
+Doctor Anaya Mehta works in Asia Kolkata. Fifteen minute consultations, with a five minute buffer between them.
+
+Look at the first three slots. Ten o'clock. Ten twenty. Ten forty. Fifteen minutes of appointment plus five minutes of buffer, so they start twenty minutes apart. That is the worked example from the assessment brief, and it comes straight out of the generator.
+
+Every slot is stored as a single U T C instant. But it is rendered three ways: the U T C instant, the viewer's local time, and the doctor's local time. All three are computed by the server, not by the browser.
+
+Switching the viewing timezone to New York shows the same instants in New York time, with the doctor's Kolkata time alongside. Because when a patient in New York and a doctor in India both talk about the ten forty appointment, they have to mean the same moment.
+
+Two bugs here are worth naming. Luxon's plus minutes function measures elapsed time, so on a spring forward day, midnight plus a hundred and eighty minutes is four in the morning, not three. Every slot after the transition was silently shifting by an hour. A test caught it.
+
+And a validator accepted the string I S T. The timezone database says that means Israel. Almost everyone typing it means India. That is a three and a half hour error on every appointment.

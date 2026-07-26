@@ -1,0 +1,23 @@
+This is the core of the assessment.
+
+Three layers guard a booking. A Redis distributed lock. A select for update row lock inside the transaction. And a partial unique index in Postgres. Only the third one is the guarantee.
+
+Here is the race. Twelve different signed in patients, twelve booking requests for one single slot, released simultaneously.
+
+One, two oh one Created. Eleven, four oh nine Conflicts. About a hundred and thirty milliseconds.
+
+They are twelve separate accounts deliberately. The booking rate limiter allows thirty requests per minute per user, so firing all twelve from one account would demonstrate the rate limiter instead of the concurrency control.
+
+Now the claim worth defending. The Redis lock is not what makes this correct.
+
+A lease based distributed lock cannot be made safe. If a process pauses, for a long garbage collection say, past the lock's expiry, it wakes up believing it still holds a lock that Redis has already handed to somebody else. And then it writes. Treating Redlock as a correctness mechanism is precisely how systems double book.
+
+So the lock here is a throughput optimisation. It stops a hundred contenders from each holding a database connection while queueing on the same row. It is not the guarantee.
+
+And that can be proven, by removing it. This test stubs the lock out entirely, with no Redis coordination at all, fires the contenders, and still asserts exactly one winner. It passes. That test is the actual proof.
+
+What holds the line is this, in the migration. A partial unique index. Unique on slot id, where the status is confirmed. One confirmed booking per slot.
+
+Postgres refuses the second write regardless of what the application code believes, regardless of how many replicas are running, and regardless of whether Redis is even up.
+
+The where clause matters too. It is scoped to confirmed bookings only, which is exactly why a cancelled booking frees the slot to be booked once more.

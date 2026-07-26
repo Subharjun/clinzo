@@ -1,0 +1,90 @@
+This is Clinzo, a doctor slot scheduling backend built for the backend engineering assessment.
+
+The problem sounds simple. A doctor says: I work Mondays, ten in the morning to six in the evening. A patient needs to book one specific fifteen minute appointment inside that window.
+
+Turning a broad availability window into bookable slots is the easy half. The hard half is what happens when two patients want the same ten o'clock slot, and click at the same instant.
+
+So here is the claim this video defends. This system will never double book a slot.
+
+The stack is Node twenty two, TypeScript in strict mode, Express, PostgreSQL through Prisma, Redis for locking, caching and rate limiting, and Bull M Q for background jobs. Everything is containerised, with GitHub Actions running the full test suite on every push.
+
+That is about ten thousand eight hundred lines of TypeScript, and three thousand more of tests.
+
+The architecture is layered, and strict about it. Controllers translate H T T P and nothing else. Every real decision lives in the service layer. Everything that touches Postgres goes through a repository.
+
+The slot generator is deliberately pure. No database, no clock, no input or output at all. Availability in, slots out. That is what makes the hardest arithmetic in the system directly testable.
+
+This is a demo console, served by the same Express app. Plain HTML and JavaScript, no framework and no build step. It exists to make the backend's behaviour visible.
+
+Doctor Anaya Mehta works in Asia Kolkata. Fifteen minute consultations, with a five minute buffer between them.
+
+Look at the first three slots. Ten o'clock. Ten twenty. Ten forty. Fifteen minutes of appointment plus five minutes of buffer, so they start twenty minutes apart. That is the worked example from the assessment brief, and it comes straight out of the generator.
+
+Every slot is stored as a single U T C instant. But it is rendered three ways: the U T C instant, the viewer's local time, and the doctor's local time. All three are computed by the server, not by the browser.
+
+Switching the viewing timezone to New York shows the same instants in New York time, with the doctor's Kolkata time alongside. Because when a patient in New York and a doctor in India both talk about the ten forty appointment, they have to mean the same moment.
+
+Two bugs here are worth naming. Luxon's plus minutes function measures elapsed time, so on a spring forward day, midnight plus a hundred and eighty minutes is four in the morning, not three. Every slot after the transition was silently shifting by an hour. A test caught it.
+
+And a validator accepted the string I S T. The timezone database says that means Israel. Almost everyone typing it means India. That is a three and a half hour error on every appointment.
+
+Signing in as a patient. Authentication is J W T, with short lived access tokens and refresh token rotation. If a refresh token is ever replayed, which means it was stolen, the entire session family is revoked.
+
+Booking the ten o'clock slot returns a confirmation code. The panel on the right shows every A P I call, with its status, its timing and its request id. Every response carries that request id, so a user report maps to exactly one log line.
+
+A hold is different from a booking. It is the checkout window, a short reservation while a patient finishes paying. The countdown is enforced by the server, and when it expires the slot returns to the pool on its own. Nothing has to succeed for that to happen.
+
+Rescheduling moves the appointment to a new slot and keeps the same booking id. It is one atomic operation, deliberately not a cancel followed by a rebook, because that would leave a window with no appointment at all.
+
+And cancelling puts the slot straight back into public availability.
+
+This is the core of the assessment.
+
+Three layers guard a booking. A Redis distributed lock. A select for update row lock inside the transaction. And a partial unique index in Postgres. Only the third one is the guarantee.
+
+Here is the race. Twelve different signed in patients, twelve booking requests for one single slot, released simultaneously.
+
+One, two oh one Created. Eleven, four oh nine Conflicts. About a hundred and thirty milliseconds.
+
+They are twelve separate accounts deliberately. The booking rate limiter allows thirty requests per minute per user, so firing all twelve from one account would demonstrate the rate limiter instead of the concurrency control.
+
+Now the claim worth defending. The Redis lock is not what makes this correct.
+
+A lease based distributed lock cannot be made safe. If a process pauses, for a long garbage collection say, past the lock's expiry, it wakes up believing it still holds a lock that Redis has already handed to somebody else. And then it writes. Treating Redlock as a correctness mechanism is precisely how systems double book.
+
+So the lock here is a throughput optimisation. It stops a hundred contenders from each holding a database connection while queueing on the same row. It is not the guarantee.
+
+And that can be proven, by removing it. This test stubs the lock out entirely, with no Redis coordination at all, fires the contenders, and still asserts exactly one winner. It passes. That test is the actual proof.
+
+What holds the line is this, in the migration. A partial unique index. Unique on slot id, where the status is confirmed. One confirmed booking per slot.
+
+Postgres refuses the second write regardless of what the application code believes, regardless of how many replicas are running, and regardless of whether Redis is even up.
+
+The where clause matters too. It is scoped to confirmed bookings only, which is exactly why a cancelled booking frees the slot to be booked once more.
+
+The hardest design question in the system.
+
+A doctor publishes Monday, ten to six. A patient books three in the afternoon. Then the doctor shrinks Monday to ten until two. There is now a confirmed appointment sitting outside the doctor's stated availability.
+
+Auto cancelling the booking silently breaks a commitment between two people. Rejecting the change lets one appointment freeze an entire schedule. The third option is to keep the booking and report the conflict.
+
+That is what this does. Future unbooked slots outside the new window are blocked. Future booked slots are left untouched and returned as orphaned bookings. Past slots are never modified. The inconsistency is transient, visible, and actionable.
+
+When a booking is created, a notification has to go out. Writing the booking, committing, and then publishing the event means that if the process dies in between, the appointment exists and the patient is never told.
+
+So the event is written to an outbox table, inside the same transaction as the booking. Either both land or neither does. A relay then polls that table using skip locked, and publishes from there. That gives at least once delivery with idempotent consumers, which is far easier to get right than distributed atomicity.
+
+One thing stated plainly: the final delivery hop to an email provider is stubbed. It logs instead of sending. Everything around it is real.
+
+Hand written OpenAPI documentation, written by hand because generators describe types, while what matters to somebody integrating is behaviour.
+
+Health endpoints with real dependency checks, and Prometheus metrics. The whole stack comes up with a single docker compose command.
+
+C I runs lint, typecheck, the full test suite against real Postgres and real Redis, and a Docker build, on every push. It also asserts that the partial unique index still exists, because if that were dropped, every test would still pass and the guarantee would be silently gone.
+
+Two trade offs worth naming. Slots are materialised as real rows rather than computed on read, because a computed slot has no identity, and nothing for a unique index to protect.
+
+And on the daylight saving fall back, a doctor loses about an hour of inventory once a year, which is the price of unambiguous local times.
+
+Next steps would be table partitioning, calendar sync, and a real notification provider.
+
