@@ -10,8 +10,9 @@ non-obvious decisions and traps that would otherwise have to be rediscovered.
 - **Project:** Clinzo — Doctor Slot Scheduling backend (Backend Engineering Assessment)
 - **Location:** `/Users/subharjunbose/Desktop/Clinzo`
 - **Last updated:** 2026-07-26
-- **Overall status:** ✅ **Feature-complete and verified.** Only submission
-  logistics remain (see [§8](#8-remaining-work)).
+- **Repository:** <https://github.com/Subharjun/clinzo> (private)
+- **Overall status:** ✅ **Feature-complete, verified, and pushed.** Only the
+  video + Drive + email steps remain (see [§8](#8-remaining-work)).
 
 ---
 
@@ -86,7 +87,8 @@ README       : 956 lines
 | Dev database `clinzo`       | ✅ migrated + seeded (2 doctors, 12 patients, ~600 slots)                    |
 | Test database `clinzo_test` | ✅ exists and migrated (auto-created by `tests/setup/global.setup.ts`)       |
 | Prisma client               | ✅ generated                                                                 |
-| **Git**                     | ❌ **NOT initialised** — see [§8](#8-remaining-work)                         |
+| **Git**                     | ✅ initialised, 1 commit on `main`, pushed to `origin`                       |
+| **GitHub**                  | ✅ `Subharjun/clinzo` (private); CI green on first push                      |
 
 ---
 
@@ -305,26 +307,36 @@ implementations, and no unimplemented branches** in the codebase.
 
 Only submission logistics. No code work outstanding.
 
-| #   | Task                                                | Owner    | Notes                                                    |
-| --- | --------------------------------------------------- | -------- | -------------------------------------------------------- |
-| 1   | `git init` + initial commit                         | **user** | Not done — I don't commit unprompted. See command below. |
-| 2   | Push to GitHub                                      | user     | Assessment prefers a GitHub repo                         |
-| 3   | Record walkthrough video (**max 15 min**)           | user     | Suggested outline below                                  |
-| 4   | Upload repo + video + docs to a Google Drive folder | user     |                                                          |
-| 5   | Reply to the email with **only** the Drive link     | user     | Assessment: "Do not include any additional text"         |
+| #   | Task                                                | Owner    | Notes                                                     |
+| --- | --------------------------------------------------- | -------- | --------------------------------------------------------- |
+| 1   | `git init` + initial commit                         | —        | ✅ done — commit `cd31ec3` on `main`, 100 files           |
+| 2   | Push to GitHub                                      | —        | ✅ done — <https://github.com/Subharjun/clinzo> (private) |
+| 3   | Record walkthrough video (**max 15 min**)           | **user** | Outline below. Cannot be automated.                       |
+| 4   | Upload repo + video + docs to a Google Drive folder | **user** | Drive connector not authorised in this environment        |
+| 5   | Reply to the email with **only** the Drive link     | **user** | Assessment: "Do not include any additional text"          |
 
-### 8.1 Git initialisation
+### 8.1 Git — what was done
 
-`.gitignore` is already correct — `.env` is excluded, `.env.example` is kept.
-**Verify `.env` is not staged before committing** (it contains real secrets).
+`.gitignore` was already correct. Verified before pushing:
+
+- `.env` **excluded** (checked both locally and via the GitHub API — returns 404)
+- `.env.example` committed, contains **placeholders only**
+- No `dist/` or `node_modules/` staged
+- CI green on first push — all 4 jobs (`audit`, `test`, `lint`, `build`) passed
+
+To add a reviewer to the private repo:
 
 ```bash
-cd /Users/subharjunbose/Desktop/Clinzo
-git init
-git add -A
-git status --short | grep -E '^\S+\s+\.env$' && echo "STOP: .env is staged" || echo "safe: .env excluded"
-git commit -m "Doctor slot scheduling backend with concurrency-safe booking"
+gh repo view Subharjun/clinzo --web              # open it
+gh api -X PUT repos/Subharjun/clinzo/collaborators/USERNAME -f permission=pull
 ```
+
+**Known CI annotation (not a failure):** the `audit` job logs exit code 1 —
+24 high-severity findings, all from a single `brace-expansion` DoS advisory
+reached only via `eslint` / `jest` / `ts-jest`. All **devDependencies**; nothing
+in the production runtime path. `npm audit fix` cannot resolve it without
+`--force` (major bumps of jest + eslint). Left as-is deliberately — this is
+precisely the case the step's `continue-on-error: true` comment describes.
 
 ### 8.2 Suggested video outline (~15 min)
 
