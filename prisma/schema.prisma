@@ -1,0 +1,531 @@
+// ---------------------------------------------------------------------------
+// Clinzo Scheduling — data model
+//
+// Design notes (expanded in README.md § Database Design):
+//
+//  * Identity is split from domain profile: `User` owns credentials + role,
+//    `Doctor` / `Patient` own the domain attributes. This keeps auth concerns
+//    out of the scheduling aggregate and lets a person hold exactly one role.
+//
+//  * `Availability` is the doctor's INTENT (a recurring or one-off window in
+//    the doctor's local timezone). `Slot` is the MATERIALIZED, bookable unit
+//    in UTC. `Booking` is the patient's claim on a slot. Three tables, three
+//    lifecycles — never conflated.
+//
+//  * All instants are stored as `timestamptz` in UTC. Wall-clock intent
+//    (recurring windows) is stored as minutes-from-midnight + IANA timezone,
+//    because "10:00 every Monday" must survive DST transitions.
+//
+//  * Concurrency invariants are enforced by the DATABASE, not by app code:
+//      - partial unique index on Booking(slotId) WHERE status = 'CONFIRMED'
+//      - partial unique index on ReservationHold(slotId) WHERE status = 'ACTIVE'
+//      - partial unique index on Slot(doctorId, startsAt) WHERE deletedAt IS NULL
+//    See prisma/migrations/*/migration.sql. Application-level locking is an
+//    optimisation on top of these; the indexes are the correctness backstop.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+enum Role {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum AvailabilityKind {
+  /// Applies to one concrete calendar date.
+  ONE_OFF
+  /// Applies to a weekday, repeating between effectiveFrom and effectiveUntil.
+  RECURRING
+}
+
+enum SlotStatus {
+  /// Bookable right now.
+  AVAILABLE
+  /// Temporarily reserved by a checkout flow; reverts to AVAILABLE on expiry.
+  HELD
+  /// Claimed by a CONFIRMED booking.
+  BOOKED
+  /// Withdrawn by the doctor (availability change, leave, admin action).
+  BLOCKED
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  /// Terminal state of the *origin* booking after a successful reschedule.
+  RESCHEDULED
+  COMPLETED
+  NO_SHOW
+}
+
+enum CancelledBy {
+  PATIENT
+  DOCTOR
+  ADMIN
+  SYSTEM
+}
+
+enum HoldStatus {
+  ACTIVE
+  /// Converted into a CONFIRMED booking.
+  CONSUMED
+  /// Explicitly abandoned by the patient.
+  RELEASED
+  /// TTL elapsed before checkout completed.
+  EXPIRED
+}
+
+enum WaitlistStatus {
+  ACTIVE
+  NOTIFIED
+  FULFILLED
+  CANCELLED
+  EXPIRED
+}
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+}
+
+enum AppointmentMode {
+  VIDEO
+  IN_CLINIC
+}
+
+// ---------------------------------------------------------------------------
+// Identity & auth
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String  @id @default(uuid()) @db.Uuid
+  /// Normalised to lower-case at the service boundary, so a plain unique
+  /// index gives case-insensitive identity without requiring the citext
+  /// extension (keeps the schema portable across managed Postgres offerings).
+  email        String  @unique
+  passwordHash String
+  role         Role
+  fullName     String
+  phone        String?
+  isActive     Boolean @default(true)
+
+  /// Presentation timezone (IANA). Storage is always UTC.
+  timezone String @default("UTC")
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  /// Soft delete — auth lookups filter on `deletedAt IS NULL`.
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  doctor        Doctor?
+  patient       Patient?
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  idempotencyKeys IdempotencyKey[]
+
+  @@index([role, deletedAt])
+  @@index([createdAt])
+  @@map("users")
+}
+
+model RefreshToken {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// SHA-256 of the opaque token. The raw token never touches the database.
+  tokenHash String @unique
+
+  /// Rotation family. Reuse of a rotated token revokes the whole family,
+  /// which is the standard detection signal for refresh-token theft.
+  familyId String @db.Uuid
+
+  expiresAt DateTime  @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+  /// Set when this token was rotated out, pointing at its successor.
+  replacedById String? @db.Uuid
+
+  userAgent String?
+  ipAddress String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([userId, revokedAt])
+  @@index([familyId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Domain actors
+// ---------------------------------------------------------------------------
+
+model Doctor {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @unique @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  specialization String
+  registrationNo String  @unique
+  bio            String?
+  /// Doctor's operating timezone; availability wall-clock times are read in it.
+  timezone       String  @default("UTC")
+
+  consultationFeeCents Int     @default(0)
+  currency             String  @default("INR")
+  isAcceptingPatients  Boolean @default(true)
+
+  /// Default slot geometry; per-availability values override these.
+  defaultSlotDurationMinutes Int @default(15)
+  defaultBufferMinutes       Int @default(0)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  availabilities Availability[]
+  slots          Slot[]
+  bookings       Booking[]
+  waitlistEntries WaitlistEntry[]
+
+  @@index([specialization, deletedAt])
+  @@index([isAcceptingPatients, deletedAt])
+  @@map("doctors")
+}
+
+model Patient {
+  id String @id @default(uuid()) @db.Uuid
+
+  userId String @unique @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  dateOfBirth DateTime? @db.Date
+  gender      String?
+  timezone    String    @default("UTC")
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  bookings        Booking[]
+  reservationHolds ReservationHold[]
+  waitlistEntries WaitlistEntry[]
+
+  @@index([deletedAt])
+  @@map("patients")
+}
+
+// ---------------------------------------------------------------------------
+// Scheduling
+// ---------------------------------------------------------------------------
+
+/// A doctor's declared working window. Never booked directly — it is the
+/// template from which slots are materialised.
+model Availability {
+  id String @id @default(uuid()) @db.Uuid
+
+  doctorId String @db.Uuid
+  doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  kind AvailabilityKind
+
+  /// ONE_OFF only: the concrete local calendar date the window applies to.
+  date DateTime? @db.Date
+
+  /// RECURRING only: 1 = Monday … 7 = Sunday (ISO-8601 weekday).
+  weekday Int?
+
+  /// Wall-clock window in `timezone`, as minutes from local midnight.
+  /// 600 = 10:00, 1080 = 18:00. Stored this way (not as an instant) so a
+  /// recurring window keeps its local meaning across DST boundaries.
+  startMinuteOfDay Int
+  endMinuteOfDay   Int
+
+  /// IANA zone the wall-clock minutes are interpreted in.
+  timezone String
+
+  slotDurationMinutes Int
+  bufferMinutes       Int @default(0)
+
+  mode AppointmentMode @default(VIDEO)
+  /// Free-form appointment type (e.g. "FIRST_VISIT", "FOLLOW_UP"). Lets a
+  /// doctor expose different durations for different consultation types.
+  appointmentType String @default("STANDARD")
+
+  /// RECURRING only: inclusive local date bounds of the recurrence.
+  effectiveFrom  DateTime? @db.Date
+  effectiveUntil DateTime? @db.Date
+
+  isActive Boolean @default(true)
+
+  /// Optimistic-locking guard for concurrent availability edits.
+  version Int @default(0)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  slots Slot[]
+
+  @@index([doctorId, isActive, deletedAt])
+  @@index([doctorId, kind, weekday])
+  @@index([doctorId, date])
+  @@map("availabilities")
+}
+
+/// A discrete, bookable consultation slot in UTC. Materialised from an
+/// Availability. This is the row that concurrent bookers contend on.
+model Slot {
+  id String @id @default(uuid()) @db.Uuid
+
+  doctorId String @db.Uuid
+  doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  /// The window this slot was generated from. Nulled (SetNull) if that
+  /// availability is hard-deleted, so booked slots survive independently.
+  availabilityId String?       @db.Uuid
+  availability   Availability? @relation(fields: [availabilityId], references: [id], onDelete: SetNull)
+
+  startsAt DateTime @db.Timestamptz(3)
+  endsAt   DateTime @db.Timestamptz(3)
+
+  durationMinutes Int
+  bufferMinutes   Int @default(0)
+
+  status SlotStatus @default(AVAILABLE)
+
+  mode            AppointmentMode @default(VIDEO)
+  appointmentType String          @default("STANDARD")
+
+  /// Denormalised pointer to the currently active hold, for cheap reads.
+  /// Authoritative hold state lives in ReservationHold + Redis.
+  heldUntil DateTime? @db.Timestamptz(3)
+
+  /// Why a slot was BLOCKED (availability shrunk, doctor leave, …).
+  blockedReason String?
+
+  /// Optimistic-locking guard. Bumped on every status transition.
+  version Int @default(0)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  bookings         Booking[]
+  reservationHolds ReservationHold[]
+
+  /// Primary read path: "free slots for doctor D in window [from, to)".
+  @@index([doctorId, startsAt, status])
+  @@index([doctorId, status, startsAt])
+  @@index([availabilityId, status])
+  @@index([startsAt])
+  @@map("slots")
+}
+
+model Booking {
+  id String @id @default(uuid()) @db.Uuid
+
+  slotId String @db.Uuid
+  slot   Slot   @relation(fields: [slotId], references: [id], onDelete: Restrict)
+
+  patientId String  @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Restrict)
+
+  doctorId String @db.Uuid
+  doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Restrict)
+
+  status BookingStatus @default(CONFIRMED)
+
+  /// Denormalised from the slot so a booking stays readable/reportable even
+  /// after the originating availability is edited away.
+  startsAt        DateTime        @db.Timestamptz(3)
+  endsAt          DateTime        @db.Timestamptz(3)
+  mode            AppointmentMode @default(VIDEO)
+  appointmentType String          @default("STANDARD")
+
+  reasonForVisit String?
+  notes          String?
+
+  /// Reschedule chain: the booking this one replaced.
+  rescheduledFromId String?  @unique @db.Uuid
+  rescheduledFrom   Booking? @relation("RescheduleChain", fields: [rescheduledFromId], references: [id], onDelete: SetNull)
+  rescheduledTo     Booking? @relation("RescheduleChain")
+
+  cancelledAt     DateTime?    @db.Timestamptz(3)
+  cancelledBy     CancelledBy?
+  cancellationReason String?
+
+  confirmationCode String @unique
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt DateTime? @db.Timestamptz(3)
+
+  @@index([patientId, status, startsAt])
+  @@index([doctorId, status, startsAt])
+  @@index([slotId, status])
+  @@index([startsAt])
+  @@map("bookings")
+}
+
+/// A short-lived claim on a slot while a patient completes checkout.
+/// Redis holds the authoritative TTL; this row exists for auditability and
+/// for recovery if Redis is flushed.
+model ReservationHold {
+  id String @id @default(uuid()) @db.Uuid
+
+  slotId String @db.Uuid
+  slot   Slot   @relation(fields: [slotId], references: [id], onDelete: Cascade)
+
+  patientId String  @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  status HoldStatus @default(ACTIVE)
+
+  expiresAt  DateTime  @db.Timestamptz(3)
+  releasedAt DateTime? @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+
+  /// Correlates the hold with the checkout/payment attempt that owns it.
+  checkoutReference String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([slotId, status])
+  @@index([patientId, status])
+  @@index([status, expiresAt])
+  @@map("reservation_holds")
+}
+
+model WaitlistEntry {
+  id String @id @default(uuid()) @db.Uuid
+
+  doctorId String @db.Uuid
+  doctor   Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  patientId String  @db.Uuid
+  patient   Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  /// UTC window the patient is willing to be slotted into.
+  windowStart DateTime @db.Timestamptz(3)
+  windowEnd   DateTime @db.Timestamptz(3)
+
+  appointmentType String @default("STANDARD")
+
+  status WaitlistStatus @default(ACTIVE)
+
+  notifiedAt   DateTime? @db.Timestamptz(3)
+  fulfilledAt  DateTime? @db.Timestamptz(3)
+  /// FIFO tiebreaker within the same window.
+  priority     Int       @default(0)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([doctorId, status, windowStart])
+  @@index([patientId, status])
+  @@map("waitlist_entries")
+}
+
+// ---------------------------------------------------------------------------
+// Cross-cutting: audit, outbox, idempotency
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  id String @id @default(uuid()) @db.Uuid
+
+  actorId   String? @db.Uuid
+  actor     User?   @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorRole Role?
+
+  action     String
+  entityType String
+  entityId   String?
+
+  /// Redacted, structured before/after payload. Never contains secrets.
+  metadata Json?
+
+  requestId String?
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([entityType, entityId, createdAt])
+  @@index([actorId, createdAt])
+  @@index([action, createdAt])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+/// Transactional outbox. Domain events are written in the SAME transaction as
+/// the state change, then relayed asynchronously. Guarantees at-least-once
+/// delivery without dual-write inconsistency. Consumers must be idempotent.
+model OutboxEvent {
+  id String @id @default(uuid()) @db.Uuid
+
+  aggregateType String
+  aggregateId   String
+
+  eventType String
+  payload   Json
+
+  status  OutboxStatus @default(PENDING)
+  attempts Int         @default(0)
+  lastError String?
+
+  availableAt DateTime  @default(now()) @db.Timestamptz(3)
+  publishedAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([status, availableAt])
+  @@index([aggregateType, aggregateId])
+  @@map("outbox_events")
+}
+
+/// Server-side replay protection for unsafe endpoints.
+model IdempotencyKey {
+  id String @id @default(uuid()) @db.Uuid
+
+  key    String @db.VarChar(255)
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  endpoint String
+
+  /// SHA-256 of the canonical request body; a same-key/different-body replay
+  /// is a client bug and is rejected with 422 rather than silently replayed.
+  requestHash String
+
+  responseStatus Int?
+  responseBody   Json?
+
+  /// Set while the first request is still in flight, so a concurrent replay
+  /// gets 409 instead of executing twice.
+  completedAt DateTime? @db.Timestamptz(3)
+  expiresAt   DateTime  @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([userId, key, endpoint])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}

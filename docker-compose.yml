@@ -1,0 +1,126 @@
+name: clinzo
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clinzo-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-clinzo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-clinzo}
+      POSTGRES_DB: ${POSTGRES_DB:-clinzo}
+      # Deterministic timestamps: the server never guesses a local zone.
+      PGTZ: UTC
+      TZ: UTC
+    command:
+      - postgres
+      - -c
+      - timezone=UTC
+      - -c
+      - max_connections=300
+    ports:
+      - '${POSTGRES_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-clinzo} -d ${POSTGRES_DB:-clinzo}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: clinzo-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - 'yes'
+      # BullMQ requires keyspace eviction to be disabled: evicting a job key
+      # silently loses work. `noeviction` makes memory pressure loud instead.
+      - --maxmemory-policy
+      - noeviction
+    ports:
+      - '${REDIS_PORT:-6379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      target: runtime
+    container_name: clinzo-migrate
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-clinzo}:${POSTGRES_PASSWORD:-clinzo}@postgres:5432/${POSTGRES_DB:-clinzo}?schema=public
+    command: ['npx', 'prisma', 'migrate', 'deploy']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  api:
+    build:
+      context: .
+      target: runtime
+    container_name: clinzo-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-clinzo}:${POSTGRES_PASSWORD:-clinzo}@postgres:5432/${POSTGRES_DB:-clinzo}?schema=public&connection_limit=20&pool_timeout=10
+      REDIS_URL: redis://redis:6379
+    ports:
+      - '${PORT:-3000}:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ['node', 'dist/server.js']
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://127.0.0.1:3000/health/live',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  worker:
+    build:
+      context: .
+      target: runtime
+    container_name: clinzo-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-clinzo}:${POSTGRES_PASSWORD:-clinzo}@postgres:5432/${POSTGRES_DB:-clinzo}?schema=public&connection_limit=10&pool_timeout=10
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    command: ['node', 'dist/jobs/worker.js']
+
+volumes:
+  postgres-data:
+  redis-data:

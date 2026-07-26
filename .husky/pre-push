@@ -1,0 +1,5 @@
+# Pushing is the last cheap moment to catch a type error or a broken unit test.
+# Integration tests are deliberately excluded: they need Postgres and Redis,
+# and a hook that fails when Docker is not running trains people to bypass it.
+npx tsc --noEmit
+npm run test:unit

@@ -1,0 +1,4 @@
+# Fast checks only: lint-staged touches just the files being committed, so the
+# hook stays under a couple of seconds. Anything slower belongs in CI, because
+# a hook developers routinely bypass with --no-verify protects nothing.
+npx lint-staged

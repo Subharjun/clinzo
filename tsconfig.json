@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "rootDir": ".",
+    "outDir": "dist",
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "declaration": false,
+    "types": ["node", "jest"]
+  },
+  "include": ["src/**/*.ts", "prisma/**/*.ts", "tests/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
