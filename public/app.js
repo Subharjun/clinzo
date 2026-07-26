@@ -190,6 +190,8 @@ async function logout() {
   $('#bookings').replaceChildren();
   $('#holds').replaceChildren();
   $('#waitlist').replaceChildren();
+  $('#diary').replaceChildren();
+  $('#diary-counts').textContent = '';
   toast('Signed out');
 }
 
@@ -748,10 +750,53 @@ async function resetRaceSlot() {
 
 /* ------------------------------ doctor view ------------------------------ */
 
+/**
+ * Explain, in place, why the diary is empty.
+ *
+ * `GET /availability/slots` is doctor-only by design — a patient must never
+ * see another patient's HELD slots or a doctor's BLOCKED ones. Signalling that
+ * with only a toast was wrong: the toast disappears after a few seconds and
+ * leaves a blank panel that reads as a broken page rather than a refused
+ * request. This states the reason persistently and offers the fix.
+ */
+function renderDiaryGate() {
+  $('#diary-counts').textContent = '';
+
+  const box = el('div', 'empty');
+  box.append(
+    el(
+      'div',
+      null,
+      state.user
+        ? `Signed in as ${state.user.fullName} (${state.user.role}). The diary is doctor-only.`
+        : 'The diary is doctor-only, and you are not signed in.',
+    ),
+    el(
+      'div',
+      'muted',
+      'It exposes HELD and BLOCKED slots, which no patient may see — so the API refuses this request.',
+    ),
+  );
+
+  const signIn = el('button', 'btn btn-primary', 'Sign in as Dr Mehta');
+  signIn.style.marginTop = '12px';
+  signIn.addEventListener('click', async () => {
+    try {
+      await login('dr.mehta@clinzo.test', PASSWORD);
+      toast(`Signed in as ${state.user.fullName}`, 'ok');
+      await loadDiary();
+    } catch (error) {
+      toast(error.message, 'bad');
+    }
+  });
+
+  box.append(signIn);
+  $('#diary').replaceChildren(box);
+}
+
 async function loadDiary() {
   if (!state.user || state.user.role !== 'DOCTOR') {
-    toast('Sign in as dr.mehta@clinzo.test', 'bad');
-    openLogin();
+    renderDiaryGate();
     return;
   }
 
@@ -826,6 +871,11 @@ function switchView(name) {
   if (name === 'holds') {
     loadHolds().catch(() => {});
     loadWaitlist().catch(() => {});
+  }
+  // State the doctor-only requirement on arrival rather than making the user
+  // press a button to discover it.
+  if (name === 'doctor' && (!state.user || state.user.role !== 'DOCTOR')) {
+    renderDiaryGate();
   }
 }
 

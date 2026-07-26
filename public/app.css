@@ -491,6 +491,12 @@ select:focus {
   border: 1px dashed var(--line);
   border-radius: var(--radius);
   font-size: 14px;
+  /* Harmless in a flex list; inside a slot grid it stops the message being
+     squeezed into a single 215px column. */
+  grid-column: 1 / -1;
+}
+.empty > div + div {
+  margin-top: 6px;
 }
 
 /* -------------------------------- race --------------------------------- */
